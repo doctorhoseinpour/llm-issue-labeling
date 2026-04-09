@@ -18,11 +18,11 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
 DATASETS=("issues3k.csv" "issues30k.csv")
 TOP_KS="1,3,9,15,21"
 MAX_SEQ_LENGTH=16384
-EMBED_MODEL="BAAI/bge-base-en-v1.5"
+EMBED_MODEL="sentence-transformers/all-MiniLM-L6-v2"
 
 MODELS=(
   "unsloth/Llama-3.2-3B-Instruct:50"
-  "unsloth/llama-3-8b-Instruct:50"
+  "unsloth/Meta-Llama-3.1-8B-Instruct-bnb-4bit:50"
   "unsloth/Qwen2.5-32B-Instruct-bnb-4bit:50"
   "unsloth/Llama-3.3-70B-Instruct-bnb-4bit:50"
 )

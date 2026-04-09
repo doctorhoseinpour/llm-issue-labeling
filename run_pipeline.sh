@@ -161,26 +161,40 @@ PIPELINE_START=$(date +%s)
 
 # ===================== Stage 1: Build Index & Retrieve =====================
 if [[ "$SKIP_RETRIEVAL" -eq 0 ]]; then
-  echo ""
-  echo ">>> Stage 1: Building FAISS index and retrieving neighbors"
-  echo "    (full dataset = retrieval pool; test = first 50% per label)"
-  STAGE_START=$(date +%s)
+  # Auto-skip if all neighbor files already exist
+  all_neighbors_exist=1
+  for k in "${K_ARRAY[@]}"; do
+    if [[ ! -f "$NEIGHBORS_DIR/neighbors_k${k}.csv" ]]; then
+      all_neighbors_exist=0
+      break
+    fi
+  done
 
-  RETRIEVAL_EXTRA_ARGS=()
-  if [[ -n "$MODEL_CACHE_DIR" ]]; then
-    RETRIEVAL_EXTRA_ARGS+=(--model_cache_dir "$MODEL_CACHE_DIR")
+  if [[ "$all_neighbors_exist" -eq 1 ]]; then
+    echo ""
+    echo ">>> Stage 1: All neighbor files already exist, SKIPPING"
+  else
+    echo ""
+    echo ">>> Stage 1: Building FAISS index and retrieving neighbors"
+    echo "    (full dataset = retrieval pool; test = first 50% per label)"
+    STAGE_START=$(date +%s)
+
+    RETRIEVAL_EXTRA_ARGS=()
+    if [[ -n "$MODEL_CACHE_DIR" ]]; then
+      RETRIEVAL_EXTRA_ARGS+=(--model_cache_dir "$MODEL_CACHE_DIR")
+    fi
+
+    "$PYTHON_BIN" "$SCRIPT_DIR/build_and_query_index.py" \
+      --dataset "$DATASET" \
+      --top_ks "$TOP_KS" \
+      --embedding_model "$EMBED_MODEL" \
+      --output_dir "$NEIGHBORS_DIR" \
+      "${RETRIEVAL_EXTRA_ARGS[@]}"
+
+    STAGE_END=$(date +%s)
+    log_time "retrieval" "-" "all" "$((STAGE_END - STAGE_START))"
+    echo "  Stage 1 done in $((STAGE_END - STAGE_START))s"
   fi
-
-  "$PYTHON_BIN" "$SCRIPT_DIR/build_and_query_index.py" \
-    --dataset "$DATASET" \
-    --top_ks "$TOP_KS" \
-    --embedding_model "$EMBED_MODEL" \
-    --output_dir "$NEIGHBORS_DIR" \
-    "${RETRIEVAL_EXTRA_ARGS[@]}"
-
-  STAGE_END=$(date +%s)
-  log_time "retrieval" "-" "all" "$((STAGE_END - STAGE_START))"
-  echo "  Stage 1 done in $((STAGE_END - STAGE_START))s"
 else
   echo ""
   echo ">>> Stage 1: SKIPPED (--skip_retrieval)"
@@ -206,6 +220,26 @@ if [[ "$SKIP_LLM" -eq 0 ]]; then
 
     # Build K list: 0 (zero-shot) + all K values
     ALL_KS="0,${TOP_KS}"
+
+    # Check if all prediction files already exist (skip completed models)
+    IFS=',' read -ra ALL_K_ARRAY <<< "$ALL_KS"
+    all_done=1
+    for ak in "${ALL_K_ARRAY[@]}"; do
+      if [[ "$ak" -eq 0 ]]; then
+        pred_file="$model_pred_dir/preds_zero_shot.csv"
+      else
+        pred_file="$model_pred_dir/preds_k${ak}.csv"
+      fi
+      if [[ ! -f "$pred_file" ]]; then
+        all_done=0
+        break
+      fi
+    done
+    if [[ "$all_done" -eq 1 ]]; then
+      echo ""
+      echo "  -- ${tag}: ALL predictions already exist, SKIPPING"
+      continue
+    fi
 
     echo ""
     echo "  -- ${tag}: loading model ONCE, running K=${ALL_KS} (max_new_tokens=${model_max_tokens})"
